@@ -1,7 +1,8 @@
 # 基于springboot+langchain4j+ollama实现RAG的本地高考推荐模型
 
-## 说明
 ![展示图](./pic/1.png)
+
+## 说明
 
 - application.yaml里存放了端口的数据，以及ollama的地址，请确保已经下载好了ollama，以及你所需要的模型
 
