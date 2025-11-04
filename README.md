@@ -21,7 +21,7 @@
 
 - ChatController为对接应用层，在这里使用接口，并返回结果，搭配前端则在前端进行调用
 
-- \src\main\resources\rag\rag_data.md，存放了我们的RAG数据
+- \src\main\resources\rag\rag_data.md，存放了我们的RAG数据,2025年各大高校在广东省专业组录取分数线前100，理科
 
 - \src\main\resources\static\chat-memory.html 存放了我们的前端代码
 
