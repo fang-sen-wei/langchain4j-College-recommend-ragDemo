@@ -33,4 +33,4 @@
 
 3. 启动Langchain4jDemoApplication启动类，在浏览器端访问：http://localhost:8080/chat-memory.html
    
-   ![c2eabf14-6a18-44c7-83de-0238d68711ff](file:///E:/Typedown/c2eabf14-6a18-44c7-83de-0238d68711ff.png)
+
