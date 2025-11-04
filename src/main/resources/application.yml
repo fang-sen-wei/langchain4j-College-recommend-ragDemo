@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+ollama:
+  baseUrl: http://localhost:11434
+  model: qwen3:4b-instruct-2507-q4_K_M
+  #model: intent-model
+
+
+
+logging:
+  level:debug
+
+
+
+# Redis optional
+spring:
+  redis:
+    host: localhost
+    port: 6379

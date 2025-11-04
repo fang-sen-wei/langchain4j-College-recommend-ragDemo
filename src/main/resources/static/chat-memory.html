@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8" />
+    <title>AI 对话助手（后端记忆，前端不持久化）</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        :root{
+            --bg:#f4f6fb;
+            --panel:#ffffff;
+            --primary:#2563eb;
+            --muted:#6b7280;
+            --user-bg:var(--primary);
+            --ai-bg:#f3f4f6;
+            --radius:12px;
+            --max-width:860px;
+        }
+        html,body{height:100%;margin:0;font-family:Inter, "Microsoft YaHei", Arial, sans-serif;background:var(--bg);color:#0f172a;}
+        .app {
+            max-width: var(--max-width);
+            margin: 28px auto;
+            display: flex;
+            flex-direction: column;
+            height: calc(100% - 56px);
+            box-shadow: 0 8px 30px rgba(15,23,42,0.08);
+            border-radius: 14px;
+            overflow: hidden;
+            background: linear-gradient(180deg, #fff, #fbfdff);
+        }
+        header {
+            padding: 18px 22px;
+            background: linear-gradient(90deg,#0ea5e9,#2563eb);
+            color: white;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+        }
+        header h1{font-size:16px;margin:0;font-weight:600;}
+        header .hint{font-size:13px;opacity:.92}
+        main{display:flex;flex-direction:column;flex:1;min-height:0}
+        #chat {flex:1; padding:20px; overflow:auto; display:flex; flex-direction:column; gap:12px; background: transparent;}
+        .bubble{max-width:78%;padding:12px 14px;border-radius:var(--radius);line-height:1.6;word-break:break-word;box-shadow:0 1px 2px rgba(2,6,23,0.04)}
+        .bubble.user{align-self:flex-end;background:var(--user-bg);color:white;border-bottom-right-radius:4px;}
+        .bubble.ai{align-self:flex-start;background:var(--ai-bg);color:#0b1220;border-bottom-left-radius:4px;}
+        footer{padding:14px;border-top:1px solid #eef2ff;background:var(--panel);display:flex;gap:10px;align-items:center}
+        .input{
+            flex:1;padding:10px 12px;border-radius:10px;border:1px solid #e6eef8;background:white;font-size:15px;outline:none;
+        }
+        button{
+            border:0;padding:10px 14px;border-radius:10px;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;
+        }
+        button.secondary{background:#111827;opacity:.5;color:var(--muted);font-weight:600}
+        .meta{font-size:13px;color:var(--muted);padding:8px 18px;background:transparent;text-align:right}
+        .small{font-size:12px;color:var(--muted)}
+        /* loading caret for streaming */
+        .caret { display:inline-block; width:6px; height:6px; background: #000; margin-left:6px; border-radius:50%; opacity:0; animation: caret-blink 1s infinite; transform:translateY(2px)}
+        @keyframes caret-blink {0%{opacity:0}50%{opacity:1}100%{opacity:0}}
+    </style>
+</head>
+<body>
+<div class="app" role="application" aria-label="AI 对话助手">
+    <header>
+        <div>
+            <h1>🤖 AI 对话助手（后端记忆）</h1>
+            <div class="small" style="margin-top:4px">会话仅在当前页面会话中保持，刷新将清空本次会话（后端若无 memoryId 则无法识别）。</div>
+        </div>
+        <div class="hint">会话 ID：<span id="sid" style="font-weight:700">-</span></div>
+    </header>
+
+    <main>
+        <div id="chat" aria-live="polite"></div>
+        <div class="meta" id="statusLine">状态：准备就绪</div>
+    </main>
+
+    <footer>
+        <input id="inputBox" class="input" placeholder="向 AI 提问（按 Enter 发送）" autocomplete="off" />
+        <button id="sendBtn">发送</button>
+        <button id="newBtn" class="secondary">新建会话</button>
+    </footer>
+</div>
+
+<script>
+    /*
+      说明：
+      - 页面加载时生成一个临时 memoryId（保存在内存变量 currentMemoryId）。
+      - 页面刷新后 memoryId 会丢失（符合你要求）。
+      - 每次 send 会调用： /chat?memoryId=xxx&message=...
+      - 后端会根据 memoryId 维护 LangChain4j 的 ChatMemory（如果已配置）。
+      - UI 仅在内存中保留对话，刷新即清空。
+    */
+
+    // DOM
+    const chat = document.getElementById('chat');
+    const inputBox = document.getElementById('inputBox');
+    const sendBtn = document.getElementById('sendBtn');
+    const newBtn = document.getElementById('newBtn');
+    const sidEl = document.getElementById('sid');
+    const statusLine = document.getElementById('statusLine');
+
+    let currentMemoryId = createMemoryId(); // 只存在于本次页面会话（非 localStorage）
+    sidEl.textContent = currentMemoryId;
+
+    // helper: create short id (not UUID dependency)
+    function createMemoryId(){
+        const t = Date.now().toString(36);
+        const r = Math.random().toString(36).slice(2,8);
+        return `m-${t}-${r}`;
+    }
+
+    // helper: append message bubble
+    function appendBubble(text, who='ai'){
+        const d = document.createElement('div');
+        d.className = 'bubble ' + (who==='user' ? 'user' : 'ai');
+        d.textContent = text;
+        chat.appendChild(d);
+        chat.scrollTop = chat.scrollHeight;
+        return d;
+    }
+
+    // clear UI (not backend)
+    function clearChatUi(){
+        chat.innerHTML = '';
+        statusLine.textContent = '状态：已清空对话（后台仍有可能保留旧 memory）';
+    }
+
+    // send message (streaming)
+    async function sendMessage(){
+        const val = inputBox.value.trim();
+        if(!val) return;
+        // append user
+        appendBubble(val,'user');
+        inputBox.value = '';
+        inputBox.focus();
+
+        // prepare AI bubble (we'll append streaming text)
+        const aiDiv = appendBubble('','ai');
+        // tiny caret for feedback
+        const caret = document.createElement('span');
+        caret.className = 'caret';
+        aiDiv.appendChild(caret);
+
+        statusLine.textContent = '状态：正在联络后端并接收流式数据...';
+
+        // request URL (GET). 你也可以改成 POST，根据后端实现替换
+        const url = `/chat?memoryId=${encodeURIComponent(currentMemoryId)}&message=${encodeURIComponent(val)}`;
+
+        try {
+            const res = await fetch(url);
+            if(!res.ok){
+                aiDiv.textContent = `错误：后端返回 ${res.status}`;
+                statusLine.textContent = `状态：请求失败 (${res.status})`;
+                return;
+            }
+
+            // stream read
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let done = false;
+            let accumulated = '';
+
+            while(!done){
+                const {value, done: doneReading} = await reader.read();
+                if(value){
+                    const chunk = decoder.decode(value, {stream: true});
+                    accumulated += chunk;
+                    // remove caret while updating text
+                    aiDiv.textContent = accumulated;
+                    aiDiv.appendChild(caret);
+                    chat.scrollTop = chat.scrollHeight;
+                }
+                done = doneReading;
+            }
+
+            // final text (remove caret)
+            if(caret.parentNode) caret.parentNode.removeChild(caret);
+            statusLine.textContent = '状态：已收到回复';
+        } catch (err) {
+            aiDiv.textContent = '错误：' + (err.message || err);
+            statusLine.textContent = '状态：通信错误';
+            console.error(err);
+        }
+    }
+
+    // new conversation (generates new memoryId and clears UI)
+    function newConversation(){
+        currentMemoryId = createMemoryId();
+        sidEl.textContent = currentMemoryId;
+        clearChatUi();
+        statusLine.textContent = '状态：新会话已创建（后端会以新 memoryId 识别上下文）';
+    }
+
+    // bindings
+    sendBtn.addEventListener('click', sendMessage);
+    newBtn.addEventListener('click', newConversation);
+    inputBox.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter' && !e.shiftKey){
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // focus input on load
+    inputBox.focus();
+</script>
+</body>
+</html>
