@@ -21,7 +21,8 @@ public interface consultantService {
     //Flux<String> chat(@MemoryId String userId, @UserMessage String message);
 
     //阻塞式调用
-    @SystemMessage("你是广东省高考填报专家，熟知各大学在广东省的最低分数线,并给出填报意见")
+    @SystemMessage("你是广东省高考填报专家，熟知各大学在广东省的最低分数线,并给出填报意见，用户未提问分数的时候，不需要展示一堆分数")
     String chat(@MemoryId String userId, @UserMessage String message);
 
 }
+
